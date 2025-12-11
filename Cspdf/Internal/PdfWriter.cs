@@ -10,6 +10,7 @@ internal class PdfWriter
 {
     private readonly PdfDocument _document;
     private readonly StringBuilder _content = new();
+    private readonly List<(int position, byte[] data)> _binaryData = new();
     private int _objectNumber = 1;
     private readonly Dictionary<string, int> _objectMap = new();
 
@@ -22,6 +23,7 @@ internal class PdfWriter
     {
         _content.Clear();
         _objectMap.Clear();
+        _binaryData.Clear();
         _objectNumber = 1;
 
         // PDF Header
@@ -48,9 +50,68 @@ internal class PdfWriter
         // Write trailer
         WriteTrailer(catalogObjNum, infoObjNum, xrefOffset);
 
-        // Write to stream
-        var bytes = Encoding.UTF8.GetBytes(_content.ToString());
-        stream.Write(bytes, 0, bytes.Length);
+        // Write to stream - replace placeholders with binary data
+        var textContent = _content.ToString();
+        var textBytes = Encoding.UTF8.GetBytes(textContent);
+        
+        // Sort binary data by position
+        var sortedBinaryData = _binaryData.OrderBy(b => b.position).ToList();
+        
+        if (sortedBinaryData.Count == 0)
+        {
+            // No binary data, just write text
+            stream.Write(textBytes, 0, textBytes.Length);
+            return;
+        }
+        
+        // Write text content and binary data at correct positions
+        int currentPos = 0;
+        
+        foreach (var (position, data) in sortedBinaryData)
+        {
+            // Find placeholder in text
+            var placeholder = $"<BINARY_DATA_{_binaryData.IndexOf((position, data))}>";
+            var placeholderBytes = Encoding.UTF8.GetBytes(placeholder);
+            var placeholderIndex = FindBytes(textBytes, placeholderBytes, currentPos);
+            
+            if (placeholderIndex >= 0)
+            {
+                // Write text up to placeholder
+                var textToWrite = new byte[placeholderIndex - currentPos];
+                Array.Copy(textBytes, currentPos, textToWrite, 0, textToWrite.Length);
+                stream.Write(textToWrite, 0, textToWrite.Length);
+                
+                // Write binary data
+                stream.Write(data, 0, data.Length);
+                currentPos = placeholderIndex + placeholderBytes.Length;
+            }
+        }
+        
+        // Write remaining text
+        if (currentPos < textBytes.Length)
+        {
+            var remainingText = new byte[textBytes.Length - currentPos];
+            Array.Copy(textBytes, currentPos, remainingText, 0, remainingText.Length);
+            stream.Write(remainingText, 0, remainingText.Length);
+        }
+    }
+    
+    private int FindBytes(byte[] haystack, byte[] needle, int startIndex)
+    {
+        for (int i = startIndex; i <= haystack.Length - needle.Length; i++)
+        {
+            bool found = true;
+            for (int j = 0; j < needle.Length; j++)
+            {
+                if (haystack[i + j] != needle[j])
+                {
+                    found = false;
+                    break;
+                }
+            }
+            if (found) return i;
+        }
+        return -1;
     }
 
     private int WritePage(IPage page)
@@ -91,9 +152,9 @@ internal class PdfWriter
             var bitmap = graphics.GetBitmap();
             if (bitmap != null)
             {
-                // Convert bitmap to PDF image
+                // Convert bitmap to JPEG for better PDF compatibility
                 using var ms = new MemoryStream();
-                bitmap.Save(ms, ImageFormat.Png);
+                bitmap.Save(ms, ImageFormat.Jpeg);
                 var imageData = ms.ToArray();
                 var imageObjNum = WriteImage(imageData, bitmap.Width, bitmap.Height);
                 sb.AppendLine($"{bitmap.Width} 0 0 {bitmap.Height} 0 0 cm");
@@ -119,8 +180,15 @@ internal class PdfWriter
 /Length {imageData.Length}
 >>";
         WriteObject(objNum, imageContent);
-        WriteLine($"stream");
-        WriteLine(Convert.ToBase64String(imageData));
+        var streamStartPos = _content.Length;
+        WriteLine("stream");
+        // Store binary data position and data
+        var streamMarker = "stream\r\n";
+        var streamMarkerBytes = Encoding.UTF8.GetBytes(streamMarker);
+        var position = streamStartPos + streamMarkerBytes.Length;
+        _binaryData.Add((position, imageData));
+        // Write placeholder for binary data (will be replaced)
+        WriteLine($"<BINARY_DATA_{_binaryData.Count - 1}>");
         WriteLine("endstream");
         return objNum;
     }

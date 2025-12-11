@@ -10,9 +10,12 @@ internal class PdfWriter
 {
     private readonly PdfDocument _document;
     private readonly StringBuilder _content = new();
-    private readonly List<(int position, byte[] data)> _binaryData = new();
+    private readonly List<(string placeholder, byte[] data)> _binaryData = new();
     private int _objectNumber = 1;
     private readonly Dictionary<string, int> _objectMap = new();
+    private readonly Dictionary<int, long> _objectOffsets = new();
+    private readonly List<int> _imageObjectNumbers = new();
+    private int _pagesObjectNumber = 0;
 
     public PdfWriter(PdfDocument document)
     {
@@ -24,11 +27,17 @@ internal class PdfWriter
         _content.Clear();
         _objectMap.Clear();
         _binaryData.Clear();
+        _objectOffsets.Clear();
+        _imageObjectNumbers.Clear();
         _objectNumber = 1;
 
         // PDF Header
         WriteLine("%PDF-1.7");
         WriteLine("%\xE2\xE3\xCF\xD3");
+
+        // Reserve object numbers for catalog and pages tree (we'll write them later)
+        var catalogObjNum = GetNextObjectNumber();
+        _pagesObjectNumber = GetNextObjectNumber();
 
         // Write pages
         var pageRefs = new List<int>();
@@ -38,61 +47,106 @@ internal class PdfWriter
             pageRefs.Add(pageObjNum);
         }
 
-        // Write catalog
-        var catalogObjNum = WriteCatalog(pageRefs);
+        // Write catalog and pages tree with reserved numbers
+        WriteCatalogWithNumber(catalogObjNum, pageRefs);
 
         // Write document info
         var infoObjNum = WriteDocumentInfo();
 
-        // Write xref table
-        var xrefOffset = WriteXRefTable();
-
-        // Write trailer
-        WriteTrailer(catalogObjNum, infoObjNum, xrefOffset);
-
         // Write to stream - replace placeholders with binary data
         var textContent = _content.ToString();
-        var textBytes = Encoding.UTF8.GetBytes(textContent);
         
-        // Sort binary data by position
-        var sortedBinaryData = _binaryData.OrderBy(b => b.position).ToList();
-        
-        if (sortedBinaryData.Count == 0)
+        if (_binaryData.Count == 0)
         {
             // No binary data, just write text
+            var textBytes = Encoding.UTF8.GetBytes(textContent);
             stream.Write(textBytes, 0, textBytes.Length);
             return;
         }
         
-        // Write text content and binary data at correct positions
-        int currentPos = 0;
+        // Build final content by replacing placeholders with binary data
+        using var ms = new MemoryStream();
+        var writer = new StreamWriter(ms, Encoding.UTF8, leaveOpen: true);
         
-        foreach (var (position, data) in sortedBinaryData)
+        int lastIndex = 0;
+        long currentPosition = 0;
+        
+        // Track object positions and replace placeholders
+        var sortedData = _binaryData.OrderBy(b => textContent.IndexOf(b.placeholder)).ToList();
+        
+        foreach (var (placeholder, data) in sortedData)
         {
-            // Find placeholder in text
-            var placeholder = $"<BINARY_DATA_{_binaryData.IndexOf((position, data))}>";
-            var placeholderBytes = Encoding.UTF8.GetBytes(placeholder);
-            var placeholderIndex = FindBytes(textBytes, placeholderBytes, currentPos);
-            
+            var placeholderIndex = textContent.IndexOf(placeholder, lastIndex);
             if (placeholderIndex >= 0)
             {
-                // Write text up to placeholder
-                var textToWrite = new byte[placeholderIndex - currentPos];
-                Array.Copy(textBytes, currentPos, textToWrite, 0, textToWrite.Length);
-                stream.Write(textToWrite, 0, textToWrite.Length);
+                // Write text before placeholder
+                if (placeholderIndex > lastIndex)
+                {
+                    var textPart = textContent.Substring(lastIndex, placeholderIndex - lastIndex);
+                    
+                    // Track object offsets in this text part
+                    TrackObjectOffsets(textPart, currentPosition);
+                    
+                    writer.Write(textPart);
+                    writer.Flush();
+                    currentPosition = ms.Position;
+                }
                 
-                // Write binary data
-                stream.Write(data, 0, data.Length);
-                currentPos = placeholderIndex + placeholderBytes.Length;
+                // Write binary data directly to stream
+                ms.Write(data, 0, data.Length);
+                currentPosition = ms.Position;
+                lastIndex = placeholderIndex + placeholder.Length;
             }
         }
         
-        // Write remaining text
-        if (currentPos < textBytes.Length)
+        // Write remaining text and track offsets
+        if (lastIndex < textContent.Length)
         {
-            var remainingText = new byte[textBytes.Length - currentPos];
-            Array.Copy(textBytes, currentPos, remainingText, 0, remainingText.Length);
-            stream.Write(remainingText, 0, remainingText.Length);
+            var remainingText = textContent.Substring(lastIndex);
+            TrackObjectOffsets(remainingText, currentPosition);
+            writer.Write(remainingText);
+            writer.Flush();
+        }
+        
+        // Write xref table
+        var xrefOffset = WriteXRefTable(ms);
+        
+        // Write trailer
+        WriteTrailer(ms, catalogObjNum, infoObjNum, xrefOffset);
+        
+        // Copy to output stream
+        ms.Position = 0;
+        ms.CopyTo(stream);
+    }
+    
+    private void TrackObjectOffsets(string text, long startPosition)
+    {
+        int searchIndex = 0;
+        while (searchIndex < text.Length)
+        {
+            var objIndex = text.IndexOf(" 0 obj", searchIndex);
+            if (objIndex < 0) break;
+            
+            // Find the object number before " 0 obj"
+            int numberStart = objIndex - 1;
+            while (numberStart >= 0 && char.IsDigit(text[numberStart]))
+            {
+                numberStart--;
+            }
+            numberStart++;
+            
+            if (numberStart < objIndex)
+            {
+                var objNumStr = text.Substring(numberStart, objIndex - numberStart);
+                if (int.TryParse(objNumStr, out var objNum))
+                {
+                    // Calculate position: count bytes before this point
+                    var bytesBeforeObj = Encoding.UTF8.GetByteCount(text.Substring(0, numberStart));
+                    _objectOffsets[objNum] = startPosition + bytesBeforeObj;
+                }
+            }
+            
+            searchIndex = objIndex + 6;
         }
     }
     
@@ -119,9 +173,27 @@ internal class PdfWriter
         var objNum = GetNextObjectNumber();
         var contentObjNum = GetNextObjectNumber();
 
-        // Write page content
+        // Write page content stream
         var content = WritePageContent(page);
-        WriteObject(contentObjNum, content);
+        var contentBytes = Encoding.UTF8.GetBytes(content);
+        
+        // Write content stream object
+        WriteLine($"{contentObjNum} 0 obj");
+        WriteLine($@"<<
+/Length {contentBytes.Length}
+>>");
+        WriteLine("stream");
+        _content.Append(content);
+        WriteLine("endstream");
+        WriteLine("endobj");
+        WriteLine("");
+
+        // Build XObject resources for images
+        var xobjects = new StringBuilder();
+        foreach (var imgNum in _imageObjectNumbers)
+        {
+            xobjects.Append($"    /Im{imgNum} {imgNum} 0 R\n");
+        }
 
         // Write page object
         var pageContent = $@"<<
@@ -131,7 +203,7 @@ internal class PdfWriter
 /Contents {contentObjNum} 0 R
 /Resources <<
   /XObject <<
-  >>
+{xobjects}  >>
   /Font <<
   >>
 >>
@@ -169,7 +241,11 @@ internal class PdfWriter
     private int WriteImage(byte[] imageData, int width, int height)
     {
         var objNum = GetNextObjectNumber();
-        var imageContent = $@"<<
+        _imageObjectNumbers.Add(objNum);
+        
+        // Write image XObject with stream
+        WriteLine($"{objNum} 0 obj");
+        WriteLine($@"<<
 /Type /XObject
 /Subtype /Image
 /Width {width}
@@ -178,50 +254,46 @@ internal class PdfWriter
 /BitsPerComponent 8
 /Filter /DCTDecode
 /Length {imageData.Length}
->>";
-        WriteObject(objNum, imageContent);
-        var streamStartPos = _content.Length;
+>>");
         WriteLine("stream");
-        // Store binary data position and data
-        var streamMarker = "stream\r\n";
-        var streamMarkerBytes = Encoding.UTF8.GetBytes(streamMarker);
-        var position = streamStartPos + streamMarkerBytes.Length;
-        _binaryData.Add((position, imageData));
-        // Write placeholder for binary data (will be replaced)
-        WriteLine($"<BINARY_DATA_{_binaryData.Count - 1}>");
+        var placeholder = $"<BINARY_DATA_{objNum}>";
+        _binaryData.Add((placeholder, imageData));
+        _content.Append(placeholder);
+        WriteLine("");
         WriteLine("endstream");
+        WriteLine("endobj");
+        WriteLine("");
         return objNum;
     }
 
-    private int WriteCatalog(List<int> pageRefs)
+    private void WriteCatalogWithNumber(int catalogObjNum, List<int> pageRefs)
     {
-        var objNum = GetNextObjectNumber();
-        var pagesObjNum = WritePages(pageRefs);
-        var catalogContent = $@"<<
-/Type /Catalog
-/Pages {pagesObjNum} 0 R
->>";
-        WriteObject(objNum, catalogContent);
-        return objNum;
-    }
-
-    private int WritePages(List<int> pageRefs)
-    {
-        var objNum = GetNextObjectNumber();
+        // Write Pages object with reserved number
         var kids = string.Join(" ", pageRefs.Select(p => $"{p} 0 R"));
         var pagesContent = $@"<<
 /Type /Pages
 /Kids [{kids}]
 /Count {pageRefs.Count}
 >>";
-        WriteObject(objNum, pagesContent);
-        return objNum;
+        WriteLine($"{_pagesObjectNumber} 0 obj");
+        WriteLine(pagesContent);
+        WriteLine("endobj");
+        WriteLine("");
+
+        // Write Catalog object with reserved number
+        var catalogContent = $@"<<
+/Type /Catalog
+/Pages {_pagesObjectNumber} 0 R
+>>";
+        WriteLine($"{catalogObjNum} 0 obj");
+        WriteLine(catalogContent);
+        WriteLine("endobj");
+        WriteLine("");
     }
 
     private int GetPageTreeRef()
     {
-        // This would reference the Pages object
-        return 2; // Simplified
+        return _pagesObjectNumber;
     }
 
     private int WriteDocumentInfo()
@@ -242,23 +314,45 @@ internal class PdfWriter
         return objNum;
     }
 
-    private int WriteXRefTable()
+    private long WriteXRefTable(MemoryStream ms)
     {
-        // Simplified xref table
-        return _content.Length;
+        var xrefOffset = ms.Position;
+        var writer = new StreamWriter(ms, Encoding.UTF8, leaveOpen: true);
+        
+        writer.WriteLine("xref");
+        writer.WriteLine($"0 {_objectNumber}");
+        writer.WriteLine("0000000000 65535 f ");
+        
+        for (int i = 1; i < _objectNumber; i++)
+        {
+            if (_objectOffsets.TryGetValue(i, out var offset))
+            {
+                writer.WriteLine($"{offset:D10} 00000 n ");
+            }
+            else
+            {
+                writer.WriteLine("0000000000 00000 n ");
+            }
+        }
+        
+        writer.Flush();
+        return xrefOffset;
     }
 
-    private void WriteTrailer(int catalogObjNum, int infoObjNum, int xrefOffset)
+    private void WriteTrailer(MemoryStream ms, int catalogObjNum, int infoObjNum, long xrefOffset)
     {
-        WriteLine("trailer");
-        WriteLine($@"<<
+        var writer = new StreamWriter(ms, Encoding.UTF8, leaveOpen: true);
+        
+        writer.WriteLine("trailer");
+        writer.WriteLine($@"<<
 /Size {_objectNumber}
 /Root {catalogObjNum} 0 R
 /Info {infoObjNum} 0 R
 >>");
-        WriteLine("startxref");
-        WriteLine(xrefOffset.ToString());
-        WriteLine("%%EOF");
+        writer.WriteLine("startxref");
+        writer.WriteLine(xrefOffset.ToString());
+        writer.WriteLine("%%EOF");
+        writer.Flush();
     }
 
     private void WriteObject(int objNum, string content)
@@ -266,6 +360,7 @@ internal class PdfWriter
         WriteLine($"{objNum} 0 obj");
         WriteLine(content);
         WriteLine("endobj");
+        WriteLine("");
     }
 
     private int GetNextObjectNumber()
@@ -287,4 +382,5 @@ internal class PdfWriter
                   .Replace("\n", "\\n");
     }
 }
+
 

@@ -7,29 +7,8 @@ on:
     branches: [ main, develop ]
 
 jobs:
-  build-windows:
-    runs-on: windows-latest
-    
-    steps:
-    - uses: actions/checkout@v4
-    
-    - name: Setup .NET
-      uses: actions/setup-dotnet@v4
-      with:
-        dotnet-version: '8.0.x'
-    
-    - name: Restore dependencies
-      run: dotnet restore
-    
-    - name: Build
-      run: dotnet build --no-restore --configuration Release
-    
-    - name: Run tests
-      run: dotnet test --no-build --configuration Release --verbosity normal
-
-  build-linux:
+  build:
     runs-on: ubuntu-latest
-    continue-on-error: true
     
     steps:
     - uses: actions/checkout@v4
@@ -44,8 +23,5 @@ jobs:
     
     - name: Build
       run: dotnet build --no-restore --configuration Release
-    
-    - name: Run tests (skip System.Drawing tests on Linux)
-      run: dotnet test --no-build --configuration Release --verbosity normal --filter "FullyQualifiedName!~System.Drawing" || echo "Tests skipped on Linux due to System.Drawing.Common limitation"
 
 

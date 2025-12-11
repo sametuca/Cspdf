@@ -21,21 +21,32 @@ jobs:
       with:
         dotnet-version: '8.0.x'
     
+    - name: Create artifacts directory
+      run: New-Item -ItemType Directory -Force -Path ./artifacts
+    
     - name: Build and Pack
       run: dotnet pack --configuration Release --output ./artifacts
     
-    - name: Verify artifacts
+    - name: List artifacts directory
       run: |
-        if (Test-Path ./artifacts/*.nupkg) {
-          Write-Host "Package files found:"
-          Get-ChildItem ./artifacts/*.nupkg | ForEach-Object { Write-Host $_.FullName }
+        Write-Host "Contents of artifacts directory:"
+        Get-ChildItem ./artifacts -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_.FullName }
+        Write-Host "Looking for .nupkg files:"
+        $packages = Get-ChildItem ./artifacts -Filter *.nupkg -ErrorAction SilentlyContinue
+        if ($packages) {
+          Write-Host "Found $($packages.Count) package(s):"
+          $packages | ForEach-Object { Write-Host $_.FullName }
         } else {
-          Write-Host "No package files found in ./artifacts"
-          Get-ChildItem ./artifacts -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_.FullName }
+          Write-Host "ERROR: No .nupkg files found!"
           exit 1
         }
     
     - name: Publish to NuGet
-      run: dotnet nuget push ./artifacts/*.nupkg --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
+      run: |
+        $packages = Get-ChildItem ./artifacts -Filter *.nupkg
+        foreach ($package in $packages) {
+          Write-Host "Publishing $($package.Name)..."
+          dotnet nuget push $package.FullName --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
+        }
 
 

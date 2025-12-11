@@ -20,7 +20,7 @@
     <PackageTags>pdf;document;csharp;dotnet;pdf-generation;pdf-manipulation;itext;pdf-library</PackageTags>
     <PackageProjectUrl>https://github.com/sametuca/cspdf</PackageProjectUrl>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <PackageReleaseNotes>v1.0.1: Fixed PDF generation - Corrected xref table, page content streams, and parent references. PDFs now open correctly in all readers.</PackageReleaseNotes>
+    <PackageReleaseNotes>v1.0.1: Added demo project example, improved GitHub Actions workflow, and enhanced package metadata.</PackageReleaseNotes>
     <Copyright>Copyright © 2024 Cspdf Contributors</Copyright>
     
     <!-- Package Requirements -->

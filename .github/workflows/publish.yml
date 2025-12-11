@@ -25,7 +25,9 @@ jobs:
       run: dotnet build --configuration Release
     
     - name: Pack
-      run: dotnet pack --configuration Release --no-build --output ./artifacts
+      run: |
+        mkdir -p ./artifacts
+        dotnet pack --configuration Release --no-build --output ./artifacts
     
     - name: List packages
       run: |

@@ -410,6 +410,8 @@ document.Security = new DocumentSecurity
 - .NET 8.0 or later
 - System.Drawing.Common
 
+**Note**: Currently, `System.Drawing.Common` is primarily supported on Windows. For cross-platform support, we recommend using Windows or Windows Server environments. Cross-platform graphics support is planned for future releases.
+
 ## License
 
 MIT License

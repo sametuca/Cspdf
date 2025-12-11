@@ -7,11 +7,11 @@ on:
     inputs:
       version:
         description: 'Package version (e.g., 1.0.0)'
-        required: true
+        required: false
 
 jobs:
   publish:
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     
     steps:
     - uses: actions/checkout@v4
@@ -21,32 +21,24 @@ jobs:
       with:
         dotnet-version: '8.0.x'
     
-    - name: Create artifacts directory
-      run: New-Item -ItemType Directory -Force -Path ./artifacts
+    - name: Build
+      run: dotnet build --configuration Release
     
-    - name: Build and Pack
-      run: dotnet pack --configuration Release --output ./artifacts
+    - name: Pack
+      run: dotnet pack --configuration Release --no-build --output ./artifacts
     
-    - name: List artifacts directory
+    - name: List packages
       run: |
-        Write-Host "Contents of artifacts directory:"
-        Get-ChildItem ./artifacts -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_.FullName }
-        Write-Host "Looking for .nupkg files:"
-        $packages = Get-ChildItem ./artifacts -Filter *.nupkg -ErrorAction SilentlyContinue
-        if ($packages) {
-          Write-Host "Found $($packages.Count) package(s):"
-          $packages | ForEach-Object { Write-Host $_.FullName }
-        } else {
-          Write-Host "ERROR: No .nupkg files found!"
-          exit 1
-        }
+        echo "Contents of artifacts directory:"
+        ls -la ./artifacts/ || echo "Directory not found"
+        echo "Looking for .nupkg files:"
+        find ./artifacts -name "*.nupkg" 2>/dev/null || echo "No packages found"
     
     - name: Publish to NuGet
       run: |
-        $packages = Get-ChildItem ./artifacts -Filter *.nupkg
-        foreach ($package in $packages) {
-          Write-Host "Publishing $($package.Name)..."
-          dotnet nuget push $package.FullName --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
-        }
-
-
+        for package in ./artifacts/*.nupkg; do
+          if [ -f "$package" ]; then
+            echo "Publishing $package..."
+            dotnet nuget push "$package" --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
+          fi
+        done

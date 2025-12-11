@@ -15,12 +15,12 @@
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <RepositoryUrl>https://github.com/sametuca/cspdf</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
-    <Version>1.0.0</Version>
-    <PackageVersion>1.0.0</PackageVersion>
+    <Version>1.0.1</Version>
+    <PackageVersion>1.0.1</PackageVersion>
     <PackageTags>pdf;document;csharp;dotnet;pdf-generation;pdf-manipulation;itext;pdf-library</PackageTags>
     <PackageProjectUrl>https://github.com/sametuca/cspdf</PackageProjectUrl>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <PackageReleaseNotes>Initial release of Cspdf - A comprehensive PDF library for .NET with full iText 7 compatibility.</PackageReleaseNotes>
+    <PackageReleaseNotes>v1.0.1: Fixed PDF generation - Corrected xref table, page content streams, and parent references. PDFs now open correctly in all readers.</PackageReleaseNotes>
     <Copyright>Copyright © 2024 Cspdf Contributors</Copyright>
     
     <!-- Package Requirements -->

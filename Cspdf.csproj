@@ -8,7 +8,6 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     
     <!-- Enable cross-platform support for System.Drawing.Common -->
-    <EnableUnsafeBinaryFormatterSerialization>false</EnableUnsafeBinaryFormatterSerialization>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <!-- Suppress CA1416 warnings for System.Drawing.Common cross-platform usage -->
     <NoWarn>$(NoWarn);CA1416</NoWarn>

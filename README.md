@@ -416,7 +416,7 @@ document.Security = new DocumentSecurity
 
 Cspdf now supports **Windows, Linux, and macOS** through System.Drawing.Common 6.0.0.
 
-**Note:** This library uses System.Drawing.Common 6.0.0 specifically for cross-platform compatibility. Newer versions (7.0+, 8.0+) have removed support for non-Windows platforms. Please do not upgrade System.Drawing.Common to a newer version as it will break Linux/macOS support.
+> **⚠️ IMPORTANT:** This library uses System.Drawing.Common 6.0.0 specifically for cross-platform compatibility. Newer versions (7.0+, 8.0+) have removed support for non-Windows platforms. **Do not upgrade System.Drawing.Common to a newer version** as it will break Linux/macOS support.
 
 #### Linux/macOS Requirements
 

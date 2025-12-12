@@ -410,9 +410,33 @@ document.Security = new DocumentSecurity
 ## Requirements
 
 - .NET 8.0 or later
-- System.Drawing.Common
+- System.Drawing.Common (included as dependency)
 
-**Note**: Currently, `System.Drawing.Common` is primarily supported on Windows. For cross-platform support, we recommend using Windows or Windows Server environments. Cross-platform graphics support is planned for future releases.
+### Cross-Platform Support
+
+Cspdf now supports **Windows, Linux, and macOS** through System.Drawing.Common.
+
+#### Linux/macOS Requirements
+
+On Linux and macOS systems, you need to install `libgdiplus` for System.Drawing.Common to work properly:
+
+**Linux (Ubuntu/Debian):**
+```bash
+sudo apt-get update
+sudo apt-get install -y libgdiplus
+```
+
+**Linux (Fedora/CentOS/RHEL):**
+```bash
+sudo yum install libgdiplus
+```
+
+**macOS:**
+```bash
+brew install mono-libgdiplus
+```
+
+The library is configured to automatically enable Unix support for System.Drawing.Common, making it fully functional across all platforms.
 
 ## License
 

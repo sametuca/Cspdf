@@ -7,6 +7,12 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     
+    <!-- Enable cross-platform support for System.Drawing.Common -->
+    <EnableUnsafeBinaryFormatterSerialization>false</EnableUnsafeBinaryFormatterSerialization>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <!-- Suppress CA1416 warnings for System.Drawing.Common cross-platform usage -->
+    <NoWarn>$(NoWarn);CA1416</NoWarn>
+    
     <!-- NuGet Package Metadata -->
     <Authors>Samet UCA</Authors>
     <Company>Samet UCA</Company>
@@ -30,11 +36,16 @@
   </PropertyGroup>
   
   <ItemGroup>
+    <!-- Enable System.Drawing.Common on Linux/macOS -->
+    <RuntimeHostConfigurationOption Include="System.Drawing.EnableUnixSupport" Value="true" />
+  </ItemGroup>
+  
+  <ItemGroup>
     <None Include="README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="System.Drawing.Common" Version="8.0.0" />
+    <PackageReference Include="System.Drawing.Common" Version="6.0.0" />
   </ItemGroup>
 
 </Project>
